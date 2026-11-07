@@ -20,6 +20,7 @@ fn main() {
 
     propagate_sentry_dsn();
     propagate_app_version();
+    propagate_self_hosted_build();
 
     // Declare the app's own (non-plugin) commands in the ACL app manifest.
     // Since tauri 2.11, IPC from remote origins is always subject to ACL
@@ -194,6 +195,16 @@ fn read_env_value(path: &Path, key: &str) -> Option<String> {
     None
 }
 
+/// Official CI never sets NEXT_PUBLIC_SELF_HOSTED. A self-hosted desktop
+/// build does, and `updater_disabled` reads the rustc env this emits so the
+/// binary will not install an official signed update over itself.
+fn propagate_self_hosted_build() {
+    println!("cargo:rerun-if-env-changed=NEXT_PUBLIC_SELF_HOSTED");
+    if env::var("NEXT_PUBLIC_SELF_HOSTED").ok().as_deref() == Some("true") {
+        println!("cargo:rustc-env=READEST_SELF_HOSTED_BUILD=1");
+    }
+}
+
 fn build_windows_thumbnail() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let dll_crate_dir = manifest_dir
@@ -202,8 +213,16 @@ fn build_windows_thumbnail() {
         .join("windows-thumbnail");
     let dll_crate_manifest = dll_crate_dir.join("Cargo.toml");
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+    let target_triple = env::var("TARGET").unwrap_or_default();
+    let host_triple = env::var("HOST").unwrap_or_default();
 
-    let mut cmd = Command::new(env::var("CARGO").unwrap_or("cargo".into()));
+    let mut cmd = Command::new(env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    // `cargo build --target x86_64-pc-windows-msvc` has no MSVC linker on
+    // Linux. The outer build uses `cargo xwin`; the nested DLL build has to
+    // as well. A Windows host keeps plain `cargo build`.
+    if target_triple.contains("windows") && !host_triple.contains("windows") {
+        cmd.arg("xwin");
+    }
     cmd.arg("build")
         .arg("--package")
         .arg("windows_thumbnail")
@@ -214,8 +233,6 @@ fn build_windows_thumbnail() {
         cmd.arg("--release");
     }
 
-    let target_triple = env::var("TARGET").unwrap_or_default();
-    let host_triple = env::var("HOST").unwrap_or_default();
     if !target_triple.is_empty() && target_triple != host_triple {
         cmd.arg("--target").arg(&target_triple);
     }
