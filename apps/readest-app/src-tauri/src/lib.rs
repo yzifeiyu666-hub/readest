@@ -419,13 +419,21 @@ fn compute_updater_disabled(
     is_linux: bool,
     is_flatpak: bool,
     is_appimage: bool,
+    self_hosted_build: bool,
 ) -> bool {
-    env_disable || (is_linux && (is_flatpak || !is_appimage))
+    // A self-hosted desktop build is compiled with NEXT_PUBLIC_SELF_HOSTED.
+    // Official updater payloads are signed with the same key and would
+    // replace this binary with the hosted app. Plan checks on the server
+    // are unchanged; this only refuses that replacement.
+    env_disable || self_hosted_build || (is_linux && (is_flatpak || !is_appimage))
 }
 
 #[cfg(desktop)]
 fn updater_disabled() -> bool {
     let env_disable = std::env::var("READEST_DISABLE_UPDATER").is_ok();
+    // Set from build.rs only when NEXT_PUBLIC_SELF_HOSTED=true. Official CI
+    // does not set that variable, so option_env is unset and this stays false.
+    let self_hosted_build = option_env!("READEST_SELF_HOSTED_BUILD").is_some();
     #[cfg(target_os = "linux")]
     {
         let is_flatpak =
@@ -434,11 +442,17 @@ fn updater_disabled() -> bool {
             || std::env::current_exe()
                 .map(|path| path.to_string_lossy().contains("/tmp/.mount_"))
                 .unwrap_or(false);
-        compute_updater_disabled(env_disable, true, is_flatpak, is_appimage)
+        compute_updater_disabled(
+            env_disable,
+            true,
+            is_flatpak,
+            is_appimage,
+            self_hosted_build,
+        )
     }
     #[cfg(not(target_os = "linux"))]
     {
-        compute_updater_disabled(env_disable, false, false, false)
+        compute_updater_disabled(env_disable, false, false, false, self_hosted_build)
     }
 }
 
@@ -1206,32 +1220,39 @@ mod tests {
     #[test]
     fn env_opt_out_disables_on_any_desktop() {
         // READEST_DISABLE_UPDATER is an explicit opt-out on every desktop OS.
-        assert!(compute_updater_disabled(true, false, false, false));
-        assert!(compute_updater_disabled(true, true, false, true));
+        assert!(compute_updater_disabled(true, false, false, false, false));
+        assert!(compute_updater_disabled(true, true, false, true, false));
     }
 
     #[test]
     fn linux_system_package_install_is_disabled() {
         // deb/rpm/pacman installs are not AppImage and not Flatpak. Tauri's
         // Linux updater can't self-update them, so the in-app updater is hidden.
-        assert!(compute_updater_disabled(false, true, false, false));
+        assert!(compute_updater_disabled(false, true, false, false, false));
     }
 
     #[test]
     fn linux_flatpak_is_disabled() {
-        assert!(compute_updater_disabled(false, true, true, false));
+        assert!(compute_updater_disabled(false, true, true, false, false));
     }
 
     #[test]
     fn linux_appimage_keeps_updater() {
         // AppImage is the one Linux bundle Tauri can self-update.
-        assert!(!compute_updater_disabled(false, true, false, true));
+        assert!(!compute_updater_disabled(false, true, false, true, false));
     }
 
     #[test]
     fn non_linux_desktop_keeps_updater_without_opt_out() {
         // macOS / Windows: the flatpak/appimage clause must not apply, so the
         // updater stays enabled unless the env opt-out is set.
-        assert!(!compute_updater_disabled(false, false, false, false));
+        assert!(!compute_updater_disabled(false, false, false, false, false));
+    }
+
+    #[test]
+    fn self_hosted_build_disables_updater_on_windows() {
+        // The official signed feed would replace a self-hosted binary.
+        assert!(compute_updater_disabled(false, false, false, false, true));
+        assert!(compute_updater_disabled(false, true, false, true, true));
     }
 }

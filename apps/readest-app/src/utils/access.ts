@@ -185,11 +185,21 @@ export const PREMIUM_PLANS: readonly UserPlan[] = ['plus', 'pro'];
  * the browser, and straight from the environment on the server where the
  * window-injected config does not exist.
  */
+// Next 16's post-compile pass inlines `process.env.NEXT_PUBLIC_*` member
+// expressions and leaves `process.env['NEXT_PUBLIC_*']` untouched. The Tauri
+// export has no runtime env, so the public flag has to be a member expression
+// or the desktop bundle stays locked. The cast keeps
+// noPropertyAccessFromIndexSignature happy. `SELF_HOSTED` stays bracketed so
+// the Docker server still reads the container env at request time.
+type NextPublicSelfHostedEnv = { NEXT_PUBLIC_SELF_HOSTED?: string };
+
 export const isSelfHosted = (): boolean =>
   getRuntimeConfig()?.selfHosted === true ||
   // `??` would stop at an empty string, so an explicitly blank SELF_HOSTED
   // would mask NEXT_PUBLIC_SELF_HOSTED. `||` falls through on empty too.
-  (process.env['SELF_HOSTED'] || process.env['NEXT_PUBLIC_SELF_HOSTED']) === 'true';
+  (process.env['SELF_HOSTED'] ||
+    (process.env as NextPublicSelfHostedEnv).NEXT_PUBLIC_SELF_HOSTED ||
+    process.env['NEXT_PUBLIC_SELF_HOSTED']) === 'true';
 
 /**
  * The single gate for premium features: a self-hosted deployment, a paid
@@ -225,7 +235,15 @@ export const getStoragePlanData = (token: string) => {
   const purchasedQuota = data['storage_purchased_bytes'] || 0;
   const runtimeConfig = getRuntimeConfig();
   const fixedQuota =
-    runtimeConfig?.storageFixedQuota ?? parseInt(process.env['STORAGE_FIXED_QUOTA'] ?? '0');
+    runtimeConfig?.storageFixedQuota ??
+    (parseInt(process.env['STORAGE_FIXED_QUOTA'] ?? '', 10) ||
+      parseInt(
+        (process.env as { NEXT_PUBLIC_STORAGE_FIXED_QUOTA?: string })
+          .NEXT_PUBLIC_STORAGE_FIXED_QUOTA ?? '',
+        10,
+      ) ||
+      parseInt(process.env['NEXT_PUBLIC_STORAGE_FIXED_QUOTA'] ?? '', 10) ||
+      0);
   const planQuota = fixedQuota || DEFAULT_STORAGE_QUOTA[plan] || DEFAULT_STORAGE_QUOTA['free'];
   const quota = planQuota + purchasedQuota;
 
@@ -239,7 +257,15 @@ export const getStoragePlanData = (token: string) => {
 export const getTranslationQuota = (plan: UserPlan): number => {
   const runtimeConfig = getRuntimeConfig();
   const fixedQuota =
-    runtimeConfig?.translationFixedQuota ?? parseInt(process.env['TRANSLATION_FIXED_QUOTA'] ?? '0');
+    runtimeConfig?.translationFixedQuota ??
+    (parseInt(process.env['TRANSLATION_FIXED_QUOTA'] ?? '', 10) ||
+      parseInt(
+        (process.env as { NEXT_PUBLIC_TRANSLATION_FIXED_QUOTA?: string })
+          .NEXT_PUBLIC_TRANSLATION_FIXED_QUOTA ?? '',
+        10,
+      ) ||
+      parseInt(process.env['NEXT_PUBLIC_TRANSLATION_FIXED_QUOTA'] ?? '', 10) ||
+      0);
   return (
     fixedQuota || DEFAULT_DAILY_TRANSLATION_QUOTA[plan] || DEFAULT_DAILY_TRANSLATION_QUOTA['free']
   );

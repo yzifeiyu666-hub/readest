@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { jwtDecode } from 'jwt-decode';
 import {
   getCustomizationPurchased,
+  getStoragePlanData,
+  getTranslationQuota,
   isAnkiAllowed,
   isCustomizationAllowed,
   isCustomTranslatorAllowed,
@@ -74,6 +76,22 @@ describe('self-hosted deployments', () => {
     vi.stubEnv('SELF_HOSTED', '');
     vi.stubEnv('NEXT_PUBLIC_SELF_HOSTED', 'true');
     expect(isSelfHosted()).toBe(true);
+  });
+
+  it('keeps the server storage quota ahead of the public build-time value', () => {
+    vi.stubEnv('STORAGE_FIXED_QUOTA', '100');
+    vi.stubEnv('NEXT_PUBLIC_STORAGE_FIXED_QUOTA', '1073741824');
+    expect(getStoragePlanData(mockToken({ plan: 'free' })).quota).toBe(100);
+  });
+
+  it('uses the public storage quota when the server env is unset', () => {
+    vi.stubEnv('NEXT_PUBLIC_STORAGE_FIXED_QUOTA', '1073741824');
+    expect(getStoragePlanData(mockToken({ plan: 'free' })).quota).toBe(1073741824);
+  });
+
+  it('uses the public translation quota when the server env is unset', () => {
+    vi.stubEnv('NEXT_PUBLIC_TRANSLATION_FIXED_QUOTA', '50000');
+    expect(getTranslationQuota('free')).toBe(50000);
   });
 });
 

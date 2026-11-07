@@ -1,0 +1,22 @@
+{
+  "productName": "Readest Self-Hosted",
+  "mainBinaryName": "readest-selfhosted",
+  "identifier": "com.bilingify.readest.selfhosted",
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "fileAssociations": [],
+    "windows": {
+      "nsis": {
+        "installerHooks": "nsis/selfhosted-noop-hooks.nsh",
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["readest-selfhosted"]
+      }
+    }
+  }
+}
